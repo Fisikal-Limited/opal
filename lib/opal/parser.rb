@@ -61,7 +61,7 @@ module Opal
     )
 
     # Statements which should not have ';' added to them.
-    STATEMENTS = [:xstr, :dxstr]
+    STATEMENTS = [:xstr, :dxstr, :if]
 
     # The grammar (tree of sexps) representing this compiled code
     # @return [Opal::Grammar]
@@ -1275,7 +1275,7 @@ module Opal
       @scope.queue_temp redo_var
 
       if stmt_level == :stmt_closure
-        code = "(function() {#{code}; return nil;}).call(#{current_self})"
+        code = "(function() {#{code}}).call(#{current_self})"
       end
 
       code
@@ -1311,7 +1311,7 @@ module Opal
       @scope.queue_temp redo_var
 
       if stmt_level == :stmt_closure
-        code = "(function() {#{code}; return nil;}).call(#{current_self})"
+        code = "(function() {#{code}}).call(#{current_self})"
       end
 
       code
@@ -1529,7 +1529,7 @@ module Opal
       indent { code += "\n#@indent} else {\n#@indent#{process falsy, :stmt}" } if falsy
       code += "\n#@indent}"
 
-      code = "(function() { #{code}; return nil; }).call(#{current_self})" if returnable
+      code = "(function() {#{code}}).call(#{current_self})" if returnable
 
       code
     end
@@ -1869,7 +1869,7 @@ module Opal
       body = "try {\n#{body}}" unless body =~ /^try \{/
 
       res = "#{body}#{@space}finally {#{@space}#{ensr}}"
-      res = "(function() { #{res}; }).call(#{current_self})" if retn
+      res = "(function() {#{res}}).call(#{current_self})" if retn
       res
     end
 
