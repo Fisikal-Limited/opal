@@ -14,23 +14,18 @@ See the website, [http://opalrb.org](http://opalrb.org).
 
 ## Running tests
 
-Build the runtime, tests and dependencies, and run the tests with:
+First, install dependencies:
 
-```
-rake
-```
+    $ bundle install
 
-You can just build opal using `rake opal`.
+Tests can be run with phantomjs using:
 
-Alternatively, after building, you can open `spec/index.html` in any
-web browser.
+    $ rake
+
+Alternatively, you can just load up a rack instance using `rackup`, and
+visit `http://localhost:9292/` in any web browser.
 
 ## Code Overview
-
-### core
-
-The `core` directory holds the opal runtime and corelib implemented in
-ruby and javascript. These are built using `rake opal`, as above.
 
 ### lib
 
@@ -38,16 +33,20 @@ The `lib` directory holds the opal parser/compiler used to compile ruby
 into javascript. It is also built ready for the browser into `opal-parser.js`
 to allow compilation in any javascript environment.
 
+### lib/assets/javascripts
+
+This directory holds the opal runtime and corelib implemented in ruby and
+javascript. These are built using `rake`, as above.
+
 ### spec
 
 * **core** contains rubyspecs that apply to opal.
 * **language** applicable specs from rubyspec for testing language semantics
-* **opal** tests for extra methods/features in opal not found in standard ruby
-* **lib** specs for opal lib (parser, erb\_parser, grammar etc)
+* **grammar** specs for opal lib (parser, lexer, grammar etc)
 
 ## License
 
-Copyright (C) 2012 by Adam Beynon
+Copyright (C) 2013 by Adam Beynon
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

@@ -1,32 +1,22 @@
-require 'bundler/setup'
-require 'opal/rake_task'
+require 'bundler'
+Bundler.require
 
-Opal::RakeTask.new do |t|
-  t.dependencies = %w(opal-spec)
-  t.files        = []   # we handle this by Opal.runtime instead
-  t.parser       = true # we want to also build opal-parser.js (used in specs)
-end
+require 'opal/spec/rake_task'
+Opal::Spec::RakeTask.new(:default)
 
-# build runtime, dependencies and specs, then run the tests
-task :default => %w[opal opal:test]
-
-desc "opal.min.js and opal-parser.min.js"
-task :min do
-  %w[opal opal-parser].each do |file|
-    puts " * #{file}.min.js"
-    File.open("build/#{file}.min.js", "w+") do |o|
-      o.puts uglify(File.read "build/#{file}.js")
-    end
-  end
+desc "Run tests with method_missing turned off"
+task :test_no_method_missing do
+  # some specs will fail (namely method_missing based specs)
+  Opal::Processor.method_missing_enabled = false
+  Rake::Task[:default].invoke 
 end
 
 desc "Check file sizes for opal.js runtime"
 task :sizes do
-  o = File.read 'build/opal.js'
+  o = Opal::Environment.new['opal'].to_s
   m = uglify o
   g = gzip m
 
-  puts "opal.js:"
   puts "development: #{o.size}, minified: #{m.size}, gzipped: #{g.size}"
 end
 
@@ -50,29 +40,5 @@ def gzip(str)
     i.puts str
     i.close_write
     return i.read
-  end
-end
-
-# For testing just specific sections of opal
-desc "Build each test case into build/"
-task :test_cases do
-  FileUtils.mkdir_p 'build/test_cases'
-
-  sources = Dir['spec/core/*', 'spec/language', 'spec/parser', 'spec/grammar']
-
-  sources.each do |c|
-    dest = "build/test_cases/#{File.basename c}"
-    FileUtils.mkdir_p dest
-    File.open("#{dest}/specs.js", "w+") do |out|
-      out.puts Opal.build_files(c)
-    end
-
-    File.open("#{dest}/index.html", "w+") do |out|
-      out.puts File.read("spec/test_case.html")
-    end
-  end
-
-  File.open("build/test_cases/runner.js", "w+") do |out|
-    out.puts Opal.parse(File.read("spec/spec_helper.rb"))
   end
 end

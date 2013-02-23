@@ -1,14 +1,6 @@
 source :rubygems
 gemspec
 
-gem "rake"
-
-# for rebuilding grammar.rb from grammar.y
-group :grammar do
-  gem "racc"
-end
-
-# running tests on command line
-group :testing do
-  gem 'opal-spec'
-end
+gem 'rake'
+gem 'racc'
+gem 'opal-spec', '~> 0.2.12'
