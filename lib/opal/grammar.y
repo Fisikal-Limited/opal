@@ -591,6 +591,11 @@ aref_args:
     {
       result = val[0]
     }
+  | args ',' assocs trailer
+    {
+      val[0] << s(:hash, *val[2])
+      result = val[0]
+    }
   | assocs trailer
     {
       result = s(:array, s(:hash, *val[0]))
@@ -775,6 +780,15 @@ primary:
   | DEFINED opt_nl '(' expr ')'
     {
       result = s(:defined, val[3])
+    }
+  | NOT '(' expr ')'
+    {
+      result = s(:not, val[2])
+      result.line = val[2].line
+    }
+  | NOT '(' ')'
+    {
+      result = s(:not, s(:nil))
     }
   | operation brace_block
     {
@@ -1013,6 +1027,10 @@ block_var_args:
   | f_arg ',' f_rest_arg opt_f_block_arg
     {
       result = new_block_args val[0], nil, val[2], val[3]
+    }
+  | f_arg ','
+    {
+      result = new_block_args val[0], nil, nil, nil
     }
   | f_arg opt_f_block_arg
     {
@@ -1448,6 +1466,9 @@ var_lhs:
 
 backref:
     NTH_REF
+    {
+      result = s(:nth_ref, val[0])
+    }
   | BACK_REF
 
 superclass:

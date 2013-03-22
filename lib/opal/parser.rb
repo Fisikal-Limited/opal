@@ -1,45 +1,10 @@
 require 'opal/lexer'
 require 'opal/grammar'
-require 'opal/scope'
+require 'opal/target_scope'
 
 module Opal
-  # This class is used to generate the javascript code from the given
-  # ruby code. First, this class will use an instance of `Opal::Grammar`
-  # to lex and then build up a tree of sexp statements. Once done, the
-  # top level sexp is passed into `#top` which recursively generates
-  # javascript for each sexp inside, and the result is returned as a
-  # string.
-  #
-  #     p = Opal::Parser.new
-  #     p.parse "puts 42"
-  #     # => "(function() { ... })()"
-  #
-  # ## Sexps
-  #
-  # A sexp, in opal, is an array where the first value is a symbol
-  # identifying the type of sexp. A simple ruby string "hello" would
-  # be represented by the sexp:
-  #
-  #     s(:str, "hello")
-  #
-  # Once that sexp is encounterd by the parser, it is handled by
-  # `#process` which removes the sexp type from the array, and checks
-  # for a method "process_str", which is used to handle specific sexps.
-  # Once found, that method is called with the sexp and level as
-  # arguments, and the returned string is the javascript to be used in
-  # the resulting file.
-  #
-  # ## Levels
-  #
-  # A level inside the parser is just a symbol representing what type
-  # of destination the code to be generated is for. For example, the
-  # main two levels are `:stmt` and `:expr`. Most sexps generate the
-  # same code for every level, but an `if` statement for example
-  # will change when written as an expression. Javascript cannot have
-  # if statements as expressions, so that sexp would wrap its result
-  # inside an anonymous function so the if statement can compile as
-  # expected.
   class Parser
+
     # Generated code gets indented with two spaces on each scope
     INDENT = '  '
 
@@ -63,28 +28,14 @@ module Opal
     # Statements which should not have ';' added to them.
     STATEMENTS = [:xstr, :dxstr, :if]
 
-    # The grammar (tree of sexps) representing this compiled code
-    # @return [Opal::Grammar]
-    attr_reader :grammar
-
     # Holds an array of paths which this file "requires".
     # @return [Array<String>]
     attr_reader :requires
 
-    # This does the actual parsing. The ruby code given is first
-    # run through a `Grammar` instance which returns a sexp to
-    # process. This is then handled recursively, resulting in a
-    # string of javascript being returned.
-    #
-    #     p = Opal::Parser.new
-    #     p.parse "puts 'hey'"
-    #     # => "(function() { .... })()"
-    #
-    # @param [String] source the ruby code to parse
-    # @param [String] file the filename representing this code
-    # @return [String] string of javascript code
+    attr_reader :result
+
     def parse(source, options = {})
-      @grammar  = Grammar.new
+      @sexp = Grammar.new.parse(source, options[:file])
       @requires = []
       @line     = 1
       @indent   = ''
@@ -100,8 +51,9 @@ module Opal
       @method_missing = (options[:method_missing] != false)
       @optimized_operators = (options[:optimized_operators] != false)
       @arity_check = options[:arity_check]
+      @const_missing = (options[:const_missing] != false)
 
-      top @grammar.parse(source, @file)
+      @result = top(@sexp)
     end
 
     # This is called when a parsing/processing error occurs. This
@@ -113,7 +65,7 @@ module Opal
     #
     # @param [String] msg error message to raise
     def error(msg)
-      raise "#{msg} :#{@file}:#{@line}"
+      raise SyntaxError, "#{msg} :#{@file}:#{@line}"
     end
 
     # Instances of `Scope` can use this to determine the current
@@ -177,7 +129,6 @@ module Opal
     # @return [String]
     def top(sexp, options = {})
       code = nil
-      vars = []
 
       in_scope(:top) do
         indent {
@@ -221,7 +172,7 @@ module Opal
       return unless block_given?
 
       parent = @scope
-      @scope = Scope.new(type, self).tap { |s| s.parent = parent }
+      @scope = TargetScope.new(type, self).tap { |s| s.parent = parent }
       yield @scope
 
       @scope = parent
@@ -585,7 +536,6 @@ module Opal
       str = sexp.shift
       if str == @file
         @uses_file = true
-        # "'FILE'"
         @file.inspect
       else
         str.inspect
@@ -609,8 +559,13 @@ module Opal
         "(#{recv}#{mid} ? 'method' : nil)"
       when :xstr
         "(typeof(#{process part, :expression}) !== 'undefined')"
+      when :const
+        "(__scope.#{part[1].to_s} != null)"
       when :colon2
         "false"
+      when :ivar
+        ivar_name = part[1].to_s[1..-1]
+        "(#{current_self}[#{ivar_name.inspect}] != null ? 'instance-variable' : 'nil')"
       else
         raise "bad defined? part: #{part[0]}"
       end
@@ -621,8 +576,6 @@ module Opal
       with_temp do |tmp|
         "(#{tmp} = #{process(sexp.shift, :expr)}, (#{tmp} === nil || #{tmp} === false))"
       end
-      # code = "!#{process sexp.shift, :expr}"
-      # code
     end
 
     def process_block_pass(exp, level)
@@ -679,8 +632,6 @@ module Opal
             @scope.add_temp block_arg
             @scope.add_temp '__context'
             scope_name = @scope.identify!
-            # @scope.add_arg block_arg
-            # code += "var #{block_arg} = _$ || nil, $context = #{block_arg}.$S;"
             blk = "\n%s%s = %s._p || nil, __context = %s._s, %s.p = null;\n%s" %
               [@indent, block_arg, scope_name, block_arg, scope_name, @indent]
 
@@ -698,7 +649,7 @@ module Opal
       end
 
       itercode = "function(#{params.join ', '}) {\n#{code}\n#@indent}"
-      call[3] << s(:js_tmp, "(%s = %s, %s._s = %s, %s)" % [identity, itercode, identity, current_self, identity])
+      call << ("(%s = %s, %s._s = %s, %s)" % [identity, itercode, identity, current_self, identity])
 
       process call, level
     end
@@ -717,11 +668,8 @@ module Opal
     #
     # s(recv, :mid=, s(:arglist, rhs))
     def process_attrasgn(exp, level)
-      recv = exp[0]
-      mid = exp[1]
-      arglist = exp[2]
-
-      return process(s(:call, recv, mid, arglist), level)
+      recv, mid, arglist = exp
+      process s(:call, recv, mid, arglist), level
     end
 
     # Used to generate optimized attr_reader, attr_writer and
@@ -787,13 +735,7 @@ module Opal
       when :alias_native
         return handle_alias_native(sexp) if @scope.class_scope?
       when :require
-        path = arglist[1]
-
-        if path and path[0] == :str
-          @requires << path[1]
-        end
-
-        return ""
+        return handle_require arglist[1]
       when :respond_to?
         return handle_respond_to(sexp, level)
       end
@@ -801,21 +743,18 @@ module Opal
       splat = arglist[1..-1].any? { |a| a.first == :splat }
 
       if Array === arglist.last and arglist.last.first == :block_pass
-        arglist << s(:js_tmp, process(arglist.pop, :expr))
+        block = process s(:js_tmp, process(arglist.pop, :expr)), :expr
       elsif iter
-        block   = iter
+        block = iter
       end
 
       recv ||= s(:self)
 
       if block
-        tmprecv = @scope.new_temp
-      elsif splat and recv != [:self] and recv[0] != :lvar
-        tmprecv = @scope.new_temp
-      else # method_missing
-       tmprecv = @scope.new_temp
+        tmpfunc = @scope.new_temp
       end
 
+      tmprecv = @scope.new_temp
       args      = ""
 
       recv_code = process recv, :recv
@@ -825,10 +764,10 @@ module Opal
         arglist.insert 1, call_recv unless splat
         args = process arglist, :expr
 
-        dispatch = if tmprecv
-          "((#{tmprecv} = #{recv_code})#{mid} || $mm('#{ meth.to_s }'))"
-        else
-          "(#{recv_code}#{mid} || $mm('#{ meth.to_s }'))"
+        dispatch = "((#{tmprecv} = #{recv_code})#{mid} || $mm('#{ meth.to_s }'))"
+
+        if tmpfunc
+          dispatch = "(#{tmpfunc} = #{dispatch}, #{tmpfunc}._p = #{block}, #{tmpfunc})"
         end
 
         result = if splat
@@ -842,8 +781,51 @@ module Opal
         result = splat ? "#{dispatch}.apply(#{tmprecv || recv_code}, #{args})" : "#{dispatch}(#{args})"
       end
 
-      @scope.queue_temp tmprecv if tmprecv
+      @scope.queue_temp tmpfunc if tmpfunc
       result
+    end
+
+    def handle_require(sexp)
+      str = handle_require_sexp sexp
+      @requires << str
+      ""
+    end
+
+    def handle_require_sexp(sexp)
+      type = sexp.shift
+
+      if type == :str
+        return sexp[0]
+      elsif type == :call
+        recv, meth, args = sexp
+        parts = args[1..-1].map { |s| handle_require_sexp s }
+
+        if recv == [:const, :File]
+          if meth == :expand_path
+            return handle_expand_path(*parts)
+          elsif meth == :join
+            return handle_expand_path parts.join("/")
+          elsif meth == :dirname
+            return handle_expand_path parts[0].split("/")[0...-1].join("/")
+          end
+        end
+      end
+
+      error "Cannot handle dynamic require"
+    end
+
+    def handle_expand_path(path, base = '')
+      "#{base}/#{path}".split("/").inject([]) do |path, part|
+        if part == ''
+          # we had '//', so ignore
+        elsif part == '..'
+          path.pop
+        else
+          path << part
+        end
+
+        path
+      end.join "/"
     end
 
     # s(:arglist, [arg [, arg ..]])
@@ -1000,31 +982,24 @@ module Opal
       "(function(__base){#{spacer}#{cls}#{spacer}#{boot}\n#{code}\n#{@indent}})(#{base})"
     end
 
-    def process_undef(exp, level)
-      @helpers[:undef] = true
-      jsid = mid_to_jsid exp[0][1].to_s
 
-      # "__undef(this, #{jsid.inspect})"
-      # FIXME: maybe add this to donate(). it will be undefined, so
-      # when added to includees it will actually undefine methods there
-      # too.
-      "delete #{ @scope.proto }#{jsid}"
+    # undef :foo
+    # => delete MyClass.prototype.$foo
+    def process_undef(sexp, level)
+      "delete #{ @scope.proto }#{ mid_to_jsid sexp[0][1].to_s }"
     end
 
     # s(:defn, mid, s(:args), s(:scope))
     def process_defn(sexp, level)
-      mid = sexp[0]
-      args = sexp[1]
-      stmts = sexp[2]
+      mid, args, stmts = sexp
+
       js_def nil, mid, args, stmts, sexp.line, sexp.end_line
     end
 
     # s(:defs, recv, mid, s(:args), s(:scope))
     def process_defs(sexp, level)
-      recv = sexp[0]
-      mid  = sexp[1]
-      args = sexp[2]
-      stmts = sexp[3]
+      recv, mid, args, stmts = sexp
+
       js_def recv, mid, args, stmts, sexp.line, sexp.end_line
     end
 
@@ -1061,7 +1036,6 @@ module Opal
       if args.last.to_s.start_with? '*'
         uses_splat = true
         if args.last == :*
-          #args[-1] = splat
           argc -= 1
         else
           splat = args[-1].to_s[1..-1].to_sym
@@ -1069,8 +1043,6 @@ module Opal
           argc -= 1
         end
       end
-
-      args << block_name if block_name # have to re-add incase there was a splat arg
 
       if @arity_check
         arity_code = arity_check(args, opt, uses_splat, block_name, mid) + "\n#{INDENT}"
@@ -1091,56 +1063,24 @@ module Opal
           params = process args, :expr
           stmt_code = "\n#@indent" + process(stmts, :stmt)
 
-          if @scope.uses_block?
-            # CASE 1: no args - only the block
-            if argc == 0 and !splat
-              # add param name as a function param, to make it cleaner
-              # params = yielder
-              code += "if (typeof(#{yielder}) !== 'function') { #{yielder} = nil }"
-            # CASE 2: we have a splat - use argc to get splat args, then check last one
-            elsif splat
-              @scope.add_temp yielder
-              code += "#{splat} = __slice.call(arguments, #{argc});\n#{@indent}"
-              code += "if (typeof(#{splat}[#{splat}.length - 1]) === 'function') { #{yielder} = #{splat}.pop(); } else { #{yielder} = nil; }\n#{@indent}"
-            # CASE 3: we have some opt args
-            elsif opt
-              code += "var BLOCK_IDX = arguments.length - 1;\n#{@indent}"
-              code += "if (typeof(arguments[BLOCK_IDX]) === 'function' && arguments[BLOCK_IDX]._s !== undefined) { #{yielder} = arguments[BLOCK_IDX] } else { #{yielder} = nil }"
-              lastopt = opt[-1][1]
-              opt[1..-1].each do |o|
-                id = process s(:lvar, o[1]), :expr
-                if o[2][2] == :undefined
-                  code += ("if (%s === %s && typeof(%s) === 'function') { %s = undefined; }" % [id, yielder, id, id])
-                else
-                  code += ("if (%s == null || %s === %s) {\n%s%s\n%s}" %
-                          [id, id, yielder, @indent + INDENT, process(o, :expre), @indent])
-                end
-              end
-
-            # CASE 4: normal args and block
-            else
-              code += "if (typeof(#{yielder}) !== 'function') { #{yielder} = nil }"
-            end
-          else
-            opt[1..-1].each do |o|
-              next if o[2][2] == :undefined
-              id = process s(:lvar, o[1]), :expr
-              code += ("if (%s == null) {\n%s%s\n%s}" %
+          opt[1..-1].each do |o|
+            next if o[2][2] == :undefined
+            id = process s(:lvar, o[1]), :expr
+            code += ("if (%s == null) {\n%s%s\n%s}" %
                         [id, @indent + INDENT, process(o, :expre), @indent])
-            end if opt
+          end if opt
 
-            code += "#{splat} = __slice.call(arguments, #{argc});" if splat          
+          code += "#{splat} = __slice.call(arguments, #{argc});" if splat
+
+          scope_name = @scope.identity
+
+          if @scope.uses_block?
+            @scope.add_temp yielder
+            blk = "\n%s%s = %s._p || nil, %s._p = null;\n%s" % [@indent, yielder, scope_name, scope_name, @indent]
           end
 
           code += stmt_code
-          # code += "\n#@indent" + process(stmts, :stmt)
-
-          if @scope.uses_block? and !block_name
-            params = params.empty? ? yielder : "#{params}, #{yielder}"
-          end
-
-          # Returns the identity name if identified, nil otherwise
-          scope_name = @scope.identity
+          code = "#{blk}#{code}"
 
           uses_super = @scope.uses_super
 
@@ -1156,6 +1096,8 @@ module Opal
         else
           "#{ recv }#{ jsid } = #{ defcode }"
         end
+      elsif @scope.class? and @scope.name == 'Object'
+        "#{current_self}._defn('$#{mid}', #{defcode})"
       elsif @scope.class_scope?
         @scope.methods << "$#{mid}"
         if uses_super
@@ -1163,6 +1105,8 @@ module Opal
           uses_super = "#{uses_super} = #{@scope.proto}#{jsid};\n#@indent"
         end
         "#{uses_super}#{ @scope.proto }#{jsid} = #{defcode}"
+      # elsif @scope.sclass?
+        # "#{ current_self }._defs('$#{mid}', #{defcode})"
       elsif @scope.type == :iter
         "def#{jsid} = #{defcode}"
       elsif @scope.type == :top
@@ -1180,7 +1124,6 @@ module Opal
       arity = args.size - 1
       arity -= (opt.size - 1) if opt
       arity -= 1 if splat
-      arity -= 1 if block_name
       arity = -arity - 1 if opt or splat
 
       # $arity will point to our received arguments count
@@ -1189,7 +1132,7 @@ module Opal
       if arity < 0 # splat or opt args
         aritycode + "if ($arity < #{-(arity + 1)}) { __opal.ac($arity, #{arity}, this, #{meth}); }"
       else
-        aritycode + "if ($arity !== #{arity} && (typeof(arguments[$arity - 1]) !== 'function' || ($arity - 1) !== #{arity})) { __opal.ac($arity, #{arity}, this, #{meth}); }"
+        aritycode + "if ($arity !== #{arity}) { __opal.ac($arity, #{arity}, this, #{meth}); }"
       end
     end
 
@@ -1218,13 +1161,9 @@ module Opal
     def current_self
       if @scope.class_scope?
         @scope.name
-      elsif @scope.top?
+      elsif @scope.top? or @scope.iter?
         'self'
-      elsif @scope.top?
-        'self'
-      elsif @scope.iter?
-        'self'
-      else # def
+      else # defn, defs
         'this'
       end
     end
@@ -1305,9 +1244,9 @@ module Opal
 
     # s(:while, exp, block, true)
     def process_while(sexp, level)
-      expr = sexp[0]
-      stmt = sexp[1]
+      expr, stmt = sexp
       redo_var = @scope.new_temp
+
       stmt_level = if level == :expr or level == :recv
                      :stmt_closure
                     else
@@ -1475,6 +1414,10 @@ module Opal
       @helpers['gvars'] = true
       "__gvars[#{gvar.inspect}]"
     end
+ 
+    def process_nth_ref(sexp, level)
+      "nil"
+    end
 
     # s(:gasgn, :gvar, rhs)
     def process_gasgn(sexp, level)
@@ -1495,8 +1438,7 @@ module Opal
 
     # s(:cdecl, :const, rhs)
     def process_cdecl(sexp, level)
-      const = sexp[0]
-      rhs   = sexp[1]
+      const, rhs = sexp
       "__scope.#{const} = #{process rhs, :expr}"
     end
 
@@ -1504,7 +1446,7 @@ module Opal
     def process_return(sexp, level)
       val = process(sexp.shift || s(:nil), :expr)
 
-      raise "Cannot return as an expression" unless level == :stmt
+      raise SyntaxError, "void value expression: cannot return as an expression" unless level == :stmt
       "return #{val}"
     end
 
@@ -1638,8 +1580,7 @@ module Opal
 
     # s(:and, lhs, rhs)
     def process_and(sexp, level)
-      lhs = sexp[0]
-      rhs = sexp[1]
+      lhs, rhs = sexp
       t = nil
       tmp = @scope.new_temp
 
@@ -1662,12 +1603,8 @@ module Opal
       t = nil
 
       with_temp do |tmp|
-        # if t = js_truthy_optimize(lhs)
-          # "((%s = %s) ? %s : %s)" % [tmp, t, tmp, process(rhs, :expr)]
-        # else
-          "((%s = %s), %s !== false && %s !== nil ? %s : %s)" %
-            [tmp, process(lhs, :expr), tmp, tmp, tmp, process(rhs, :expr)]
-        # end
+        "((%s = %s), %s !== false && %s !== nil ? %s : %s)" %
+          [tmp, process(lhs, :expr), tmp, tmp, tmp, process(rhs, :expr)]
       end
     end
 
@@ -1710,12 +1647,12 @@ module Opal
       @scope.uses_block!
 
       splat = sexp.any? { |s| s.first == :splat }
-      # sexp.unshift s(:js_tmp, '__context') unless splat    # self
+      sexp.unshift s(:js_tmp, 'null') unless splat    # self
       args = process_arglist sexp, level
 
       y = @scope.block_name || '__yield'
 
-      splat ? "#{y}.apply(null, #{args})" : "#{y}(#{args})"
+      splat ? "#{y}.apply(null, #{args})" : "#{y}.call(#{args})"
     end
 
     def process_break(exp, level)
@@ -1726,7 +1663,7 @@ module Opal
         error "break must be used as a statement" unless level == :stmt
         "return (__breaker.$v = #{ val }, __breaker)"
       else
-        error "cannot use break outside of iter/while"
+        error "void value expression: cannot use break outside of iter/while"
       end
     end
 
@@ -1872,11 +1809,9 @@ module Opal
 
       elsif @scope.type == :def
         identity = @scope.identify!
-        cls_name = @scope.parent.name
+        cls_name = @scope.parent.name || "#{current_self}._klass.prototype"
         jsid     = mid_to_jsid @scope.mid.to_s
-        # base     = @scope.defs ? '' : ".prototype"
 
-        # "%s._super%s%s.apply(this, %s)" % [cls_name, base, jsid, args]
         if @scope.defs
           "%s._super%s.apply(this, %s)" % [cls_name, jsid, args]
         else
@@ -1899,8 +1834,31 @@ module Opal
       process s(:or, exp.shift, exp.shift), :expr
     end
 
+    # a &&= rhs
+    #
+    # s(:op_asgn_and, s(:lvar, :a), s(:lasgn, :a, rhs))
+    def process_op_asgn_and(sexp, level)
+      process s(:and, sexp.shift, sexp.shift), :expr
+    end
+
+    # lhs[args] ||= rhs
+    #
+    # s(:op_asgn1, lhs, args, :||, rhs)
     def process_op_asgn1(sexp, level)
-      "'FIXME(op_asgn1)'"
+      lhs, arglist, op, rhs = sexp
+
+      with_temp do |a| # args
+        with_temp do |r| # recv
+          args = process arglist[1], :expr
+          recv = process lhs, :expr
+
+          aref = s(:call, s(:js_tmp, r), :[], s(:arglist, s(:js_tmp, a)))
+          aset = s(:call, s(:js_tmp, r), :[]=, s(:arglist, s(:js_tmp, a), rhs))
+          orop = s(:or, aref, aset)
+
+          "(#{a} = #{args}, #{r} = #{recv}, #{process orop, :expr})"
+        end
+      end
     end
 
     # lhs.b += rhs
@@ -1913,7 +1871,21 @@ module Opal
       rhs = exp.shift
 
       if op.to_s == "||"
-        raise "op_asgn2 for ||"
+        with_temp do |temp|
+          getr = s(:call, s(:js_tmp, temp), mid, s(:arglist))
+          asgn = s(:call, s(:js_tmp, temp), "#{mid}=", s(:arglist, rhs))
+          orop = s(:or, getr, asgn)
+
+          "(#{temp} = #{lhs}, #{process orop, :expr})"
+        end
+      elsif op.to_s == '&&'
+        with_temp do |temp|
+          getr = s(:call, s(:js_tmp, temp), mid, s(:arglist))
+          asgn = s(:call, s(:js_tmp, temp), "#{mid}=", s(:arglist, rhs))
+          andop = s(:and, getr, asgn)
+
+          "(#{temp} = #{lhs}, #{process andop, :expr})"
+        end
       else
         with_temp do |temp|
           getr = s(:call, s(:js_tmp, temp), mid, s(:arglist))
@@ -1946,15 +1918,17 @@ module Opal
     def process_rescue(exp, level)
       body = exp.first.first == :resbody ? s(:nil) : exp.shift
       body = indent { process body, level }
+      handled_else = false
 
       parts = []
       until exp.empty?
+        handled_else = true unless exp.first.first == :resbody
         part = indent { process exp.shift, level }
         part = "else " + part unless parts.empty?
         parts << part
       end
       # if no rescue statement captures our error, we should rethrow
-      parts << indent { "else { throw $err; }" }
+      parts << indent { "else { throw $err; }" } unless handled_else
 
       code = "try {#@space#{INDENT}#{body}#@space} catch ($err) {#@space#{parts.join @space}#{@space}}"
       code = "(function() { #{code} }).call(#{current_self})" if level == :expr
@@ -1967,12 +1941,12 @@ module Opal
       body = exp[1]
 
       body = process(body || s(:nil), level)
-      types = args[1..-2]
+      types = args[1..-1]
+      types.pop if types.last and types.last.first != :const
 
       err = types.map { |t|
         call = s(:call, t, :===, s(:arglist, s(:js_tmp, "$err")))
         a = process call, :expr
-        #puts a
         a
       }.join ', '
       err = "true" if err.empty?
@@ -1984,7 +1958,6 @@ module Opal
       end
 
       "if (#{err}) {#{@space}#{val}#{body}}"
-      # raise exp.inspect
     end
 
     # FIXME: Hack.. grammar should remove top level begin.
@@ -1993,11 +1966,10 @@ module Opal
     end
 
     def process_next(exp, level)
-      val = exp.empty? ? 'nil' : process(exp.shift, :expr)
       if in_while?
         "continue;"
       else
-        "return #{val};"
+        "return #{ exp.empty? ? 'nil' : process(exp.shift, :expr) };"
       end
     end
 

@@ -1,3 +1,6 @@
+require File.expand_path('../../../spec_helper', __FILE__)
+require File.expand_path('../fixtures/classes', __FILE__)
+
 describe "Enumerable#find" do
   before :each do
     ScratchPad.record []
@@ -21,7 +24,7 @@ describe "Enumerable#find" do
 
   it "returns the first element for which the block is not false" do
     @elements.each do |element|
-      # @numerous.find {|e| e > element -1 }.should == element
+      @numerous.find {|e| e > element - 1 }.should == element
     end
   end
 

@@ -3,5 +3,5 @@
 .yardoc
 .bundle
 Gemfile.lock
-build
-gh-pages
+/mspec
+/build

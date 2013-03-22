@@ -1,23 +1,61 @@
 require 'bundler'
 Bundler.require
 
-require 'opal/spec/rake_task'
-Opal::Spec::RakeTask.new(:default)
+require 'opal-sprockets'
 
-desc "Run tests with method_missing turned off"
-task :test_no_method_missing do
-  # some specs will fail (namely method_missing based specs)
-  Opal::Processor.method_missing_enabled = false
-  Rake::Task[:default].invoke 
+desc "Run tests through mspec"
+task :default do
+  require 'rack'
+  require 'webrick'
+
+  Opal::Processor.arity_check_enabled = true
+
+  server = fork do
+    serv = Opal::Server.new { |s|
+      s.append_path 'spec' # before mspec, so we use our overrides
+      s.append_path File.join(Gem::Specification.find_by_name('mspec').gem_dir, 'lib')
+      s.debug = false
+      s.main = 'ospec/main'
+    }
+
+    Rack::Server.start(:app => serv, :Port => 9999, :AccessLog => [],
+      :Logger => WEBrick::Log.new("/dev/null"))
+  end
+
+  system "phantomjs \"spec/ospec/sprockets.js\" \"http://localhost:9999/\""
+  success = $?.success?
+
+  Process.kill(:SIGINT, server)
+  Process.wait
+
+  exit 1 unless success
+end
+
+desc "Build opal.js and opal-parser.js to build/"
+task :dist do
+  Opal::Processor.arity_check_enabled = false
+
+  env = Sprockets::Environment.new
+  Opal.paths.each { |p| env.append_path p }
+
+  Dir.mkdir 'build' unless File.directory? 'build'
+
+  File.open('build/opal.js', 'w+') { |f| f << env['opal'].to_s }
+  File.open('build/opal-parser.js', 'w+') { |f| f << env['opal-parser'].to_s }
 end
 
 desc "Check file sizes for opal.js runtime"
 task :sizes do
-  o = Opal::Environment.new['opal'].to_s
-  m = uglify o
-  g = gzip m
+  Opal::Processor.arity_check_enabled = false
 
-  puts "development: #{o.size}, minified: #{m.size}, gzipped: #{g.size}"
+  env = Sprockets::Environment.new
+  Opal.paths.each { |p| env.append_path p }
+
+  src = env['opal'].to_s
+  min = uglify src
+  gzp = gzip min
+
+  puts "development: #{src.size}, minified: #{min.size}, gzipped: #{gzp.size}"
 end
 
 desc "Rebuild grammar.rb for opal parser"

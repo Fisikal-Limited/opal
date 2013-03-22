@@ -1,3 +1,36 @@
+## 0.3.42 2013-03-21
+
+*   Fix/add lots of language specs.
+
+*   Seperate sprockets support out to opal-sprockets gem.
+
+*   Support %r[foo] style regexps.
+
+*   Use mspec to run specs on corelib and runtime. Rubyspecs are now
+    used, where possible to be as compliant as possible.
+
+## 0.3.41 2013-02-26
+
+*   Remove bin/opal - no longer required for building sources.
+
+*   Depreceate Opal::Environment. The Opal::Server class provides a better
+    method of using the opal load paths. Opal.paths still stores a list of
+    load paths for generic sprockets based apps to use.
+
+## 0.3.40 2013-02-23
+
+*   Add Opal::Server as an easy to configure rack server for testing and
+    running Opal based apps.
+
+*   Added optional arity check mode for parser. When turned on, every method
+    will have code which checks the argument arity. Off by default.
+
+*   Exception subclasses now relfect their name in webkit/firefox debuggers
+    to show both their class name and message.
+
+*   Add Class#const_set. Trying to access undefined constants by a literal
+    constant will now also raise a NameError.
+
 ## 0.3.39 2013-02-20
 
 *   Fix bug where methods defined on a parent class after subclass was defined

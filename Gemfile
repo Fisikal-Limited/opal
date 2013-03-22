@@ -1,6 +1,3 @@
-source :rubygems
-gemspec
+source 'https://rubygems.org'
 
-gem 'rake'
-gem 'racc'
-gem 'opal-spec', '~> 0.2.12'
+gemspec
