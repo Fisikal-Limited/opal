@@ -2,7 +2,7 @@ class Hash
   include Enumerable
 
   %x{
-    __hash = Opal.hash = function() {
+    var __hash = Opal.hash = function() {
       var hash   = new Hash,
           args   = __slice.call(arguments),
           keys   = [],
@@ -30,7 +30,7 @@ class Hash
   # compile time, so they are just added here by the constructor
   # function
   %x{
-    __hash2 = Opal.hash2 = function(keys, map) {
+    var __hash2 = Opal.hash2 = function(keys, map) {
       var hash = new Hash;
       hash.keys = keys;
       hash.map = map;
@@ -48,28 +48,25 @@ class Hash
     `__hash()`
   end
 
-  def self.from_native(obj)
-    %x{
-      var hash = __hash(), map = hash.map, keys = hash.keys;
-
-      for (var key in obj) {
-        keys.push(key);
-        map[key] = obj[key];
-      }
-
-      return hash;
-    }
-  end
-
   def self.new(defaults = undefined, &block)
     %x{
       var hash = __hash();
 
       if (defaults != null) {
-        hash.none = defaults;
+        if (defaults.constructor == Object) {
+          var map = hash.map, keys = hash.keys;
+
+          for (var key in defaults) {
+            keys.push(key);
+            map[key] = defaults[key];
+          }
+        }
+        else {
+          hash.none = defaults;
+        }
       }
       else if (block !== nil) {
-        hash.proc = block;
+          hash.proc = block;
       }
 
       return hash;
@@ -697,15 +694,15 @@ class Hash
     }
   end
 
-  def to_native
+  def to_n
     %x{
       var result = {}, keys = #{self}.keys, map = #{self}.map, bucket, value;
 
       for (var i = 0, length = keys.length; i < length; i++) {
         var key = keys[i], obj = map[key];
 
-        if (obj.$to_native) {
-          result[key] = #{`obj`.to_native};
+        if (obj.$to_n) {
+          result[key] = #{`obj`.to_n};
         }
         else {
           result[key] = obj;

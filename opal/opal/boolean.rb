@@ -1,4 +1,4 @@
-class Boolean < `Boolean`
+class Boolean
   `def._isBoolean = true`
 
   def &(other)
@@ -29,6 +29,10 @@ class Boolean < `Boolean`
 
   def to_s
     `(#{self} == true) ? 'true' : 'false'`
+  end
+
+  def to_n
+    self
   end
 end
 

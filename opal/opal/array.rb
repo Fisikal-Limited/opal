@@ -1,4 +1,4 @@
-class Array < `Array`
+class Array
   include Enumerable
 
   # Mark all javascript arrays as being valid ruby arrays
@@ -8,28 +8,71 @@ class Array < `Array`
     objects
   end
 
+  def initialize(*args)
+    self.class.new(*args)
+  end
+
   def self.new(size = undefined, obj = nil, &block)
     %x{
-      var arr = [];
+      
+      if (arguments.length > 2)
+        #{raise ArgumentError.new("wrong number of arguments. Array#new")};
+      
+      if (arguments.length == 0) 
+        return [];
 
-      if (size && size._isArray) {
-        for (var i = 0; i < size.length; i++) {
-          arr[i] = size[i];
+      var size, 
+          obj = arguments[1], 
+          arr = [];
+
+      if (!obj) {
+        if (size['$to_ary'] && typeof(size['$to_ary']) == 'function'){
+          if (size['$is_a?'](Array))
+            return size;
+          return size['$to_ary']();
         }
       }
+
+      if (typeof(arguments[0]) == 'number')
+        size = arguments[0];
       else {
-        if (block === nil) {
-          for (var i = 0; i < size; i++) {
-            arr[i] = obj;
+        if (arguments[0]['$to_int'] && typeof(arguments[0]['$to_int']) == 'function' ) {
+          size = arguments[0]['$to_int']();
+          if (typeof(size) == 'number') {
+            if (size % 1 !== 0) {
+              #{raise TypeError.new("can't convert to Integer. Array#new")};
+            }
+          } else {
+            #{raise TypeError.new("can't convert to Integer. Array#new")};
           }
-        }
-        else {
-          for (var i = 0; i < size; i++) {
-            arr[i] = block(i);
-          }
+        } else {         
+          #{raise TypeError.new("can't convert to Integer. Array#new")};
         }
       }
-
+      
+      if (size < 0) {
+        #{raise ArgumentError.new("negative array size")};
+      }
+      
+      if (obj == undefined) {
+        obj = nil;
+      }
+      
+      
+      if (block === nil)
+        for (var i = 0; i < size; i++) {
+          arr.push(obj);
+        }
+      else {
+        for (var i = 0, value; i < size; i++) {
+          value = block(i);
+          if (value === __breaker) {
+            return __breaker.$v;
+          }
+          arr[i] = block(i);
+        }
+      }  
+      
       return arr;
     }
   end
@@ -51,12 +94,18 @@ class Array < `Array`
 
       for (var i = 0, length = #{self}.length; i < length; i++) {
         var item = #{self}[i];
+        if (item._isString) {
+          item = item.toString();
+        }
 
         if (!seen[item]) {
           for (var j = 0, length2 = other.length; j < length2; j++) {
             var item2 = other[j];
+            if (item2._isString) {
+              item2 = item2.toString();
+            }
 
-            if ((item === item2) && !seen[item]) {
+            if (item === item2 && !seen[item]) {
               seen[item] = true;
 
               result.push(item);
@@ -86,11 +135,42 @@ class Array < `Array`
   end
 
   def +(other)
-    `#{self}.slice().concat(other.slice())`
+    `#{self}.concat(other)`
   end
 
   def -(other)
-    reject { |i| other.include? i }
+    %x{
+      var a = #{self},
+          b = #{other},
+          tmp = [],
+          result = [];
+      
+     if (typeof(b) == "object" && !(b instanceof Array))  {
+        if (b['$to_ary'] && typeof(b['$to_ary']) == "function") {
+          b = b['$to_ary']();
+        } else {
+          #{raise TypeError.new("can't convert to Array. Array#-") };
+        }
+      }else if ((typeof(b) != "object")) {
+        #{raise TypeError.new("can't convert to Array. Array#-") }; 
+      }      
+
+      if (a.length == 0)
+        return [];
+      if (b.length == 0)
+        return a;    
+          
+      for(var i = 0, length = b.length; i < length; i++) { 
+        tmp[b[i]] = true;
+      }
+      for(var i = 0, length = a.length; i < length; i++) {
+        if (!tmp[a[i]]) { 
+          result.push(a[i]);
+        }  
+     }
+     
+      return result; 
+    }
   end
 
   def <<(object)
@@ -125,11 +205,25 @@ class Array < `Array`
         return false;
       }
 
-      for (var i = 0, length = #{self}.length; i < length; i++) {
+      for (var i = 0, length = #{self}.length, tmp1, tmp2; i < length; i++) {
+        tmp1 = #{self}[i];
+        tmp2 = #{other}[i];
+
+        //recursive
+        if (tmp1 && (typeof(tmp1.indexOf) == "function") &&
+            (typeof(tmp2.indexOf) == "function") &&  tmp2 &&
+            (tmp1.indexOf(tmp2) == tmp2.indexOf(tmp1))) {
+          if (tmp1.indexOf(tmp1) == tmp2.indexOf(tmp2)) {
+            continue;
+          }
+        }
+
         if (!#{`#{self}[i]` == `other[i]`}) {
           return false;
         }
+
       }
+
 
       return true;
     }
@@ -139,7 +233,7 @@ class Array < `Array`
     %x{
       var size = #{self}.length;
 
-      if (typeof index !== 'number') {
+      if (typeof index !== 'number' && !index._isNumber) {
         if (index._isRange) {
           var exclude = index.exclude;
           length      = index.end;
@@ -233,6 +327,7 @@ class Array < `Array`
   def collect(&block)
     %x{
       var result = [];
+
 
       for (var i = 0, length = #{self}.length, value; i < length; i++) {
         if ((value = block(#{self}[i])) === __breaker) {
@@ -382,9 +477,19 @@ class Array < `Array`
   def each(&block)
     return enum_for :each unless block_given?
 
-    `for (var i = 0, length = #{self}.length; i < length; i++) {`
-      yield `#{self}[i]`
-    `}`
+    if block.arity > 0
+      %x{
+        for (var i = 0, length = #{self}.length; i < length; i++) {
+          if (block.apply(null, #{self}[i]._isArray ? #{self}[i] : [#{self}[i]]) === __breaker) return __breaker.$v;
+        }
+      }
+    else
+      %x{
+        for (var i = 0, length = #{self}.length; i < length; i++) {
+          #{yield `#{self}[i]`};
+        }
+      }
+    end
 
     self
   end
@@ -606,20 +711,20 @@ class Array < `Array`
   def last(count = undefined)
     %x{
       var length = #{self}.length;
-      
-      if (count === nil || typeof(count) == 'string') { 
+
+      if (count === nil || typeof(count) == 'string') {
         #{ raise TypeError, "no implicit conversion to integer" };
       }
-        
+
       if (typeof(count) == 'object') {
         if (typeof(count['$to_int']) == 'function') {
           count = count['$to_int']();
-        } 
+        }
         else {
           #{ raise TypeError, "no implicit conversion to integer" };
         }
       }
-      
+
       if (count == null) {
         return length === 0 ? nil : #{self}[length - 1];
       }
@@ -722,7 +827,9 @@ class Array < `Array`
     `#{self}.slice(0).reverse()`
   end
 
-  alias_native :reverse!, :reverse
+  def reverse!
+    `#{self}.reverse()`
+  end
 
   def reverse_each(&block)
     reverse.each &block
@@ -795,7 +902,7 @@ class Array < `Array`
 
   alias size length
 
-  def shuffle()
+  def shuffle
     %x{
         for (var i = #{self}.length - 1; i > 0; i--) {
           var j = Math.floor(Math.random() * (i + 1));
@@ -831,22 +938,75 @@ class Array < `Array`
   def sort(&block)
     %x{
       var copy = #{self}.slice();
+      var t_arg_error = false;
+      var t_break = [];
 
       if (block !== nil) {
-        return copy.sort(block);
+        var result = copy.sort(function(x, y) {
+          var result = block(x, y);
+          if (result === __breaker) {
+            t_break.push(__breaker.$v);
+          }
+          if (result === nil) {
+            t_arg_error = true;
+          }
+          if ((result != null) && result['$<=>'] && typeof(result['$<=>']) == "function") {
+            result = result['$<=>'](0);
+          }
+          if (result !== -1 && result !== 0 && result !== 1) {
+            t_arg_error = true;
+          }
+          return result;
+        });
+
+        if (t_break.length > 0)
+          return t_break[0];
+        if (t_arg_error)
+          #{raise ArgumentError, "Array#sort"};
+
+        return result;
       }
 
-      return copy.sort();
+      var result = copy.sort(function(a, b){
+        if (typeof(a) !== typeof(b)) {
+          t_arg_error = true;
+        }
+
+        if (a['$<=>'] && typeof(a['$<=>']) == "function") {
+          var result = a['$<=>'](b);
+          if (result === nil) {
+            t_arg_error = true;
+          }
+          return result;
+        }
+        if (a > b)
+          return 1;
+        if (a < b)
+          return -1;
+        return 0;
+      });
+
+      if (t_arg_error)
+        #{raise ArgumentError, "Array#sort"};
+
+      return result;
     }
   end
 
   def sort!(&block)
     %x{
+      var result;
       if (block !== nil) {
-        return #{self}.sort(block);
+        //strangely
+        result = #{self}.slice().sort(block);
+      } else {
+        result = #{self}.slice()['$sort']();
       }
-
-      return #{self}.sort();
+      #{self}.length = 0;
+      for(var i = 0; i < result.length; i++) {
+        #{self}.push(result[i]);
+      }
+      return #{self};
     }
   end
 
@@ -894,15 +1054,15 @@ class Array < `Array`
     }
   end
 
-  def to_native
+  def to_n
     %x{
       var result = [], obj
 
       for (var i = 0, len = #{self}.length; i < len; i++) {
         obj = #{self}[i];
 
-        if (obj.$to_native) {
-          result.push(#{ `obj`.to_native });
+        if (obj.$to_n) {
+          result.push(#{ `obj`.to_n });
         }
         else {
           result.push(obj);

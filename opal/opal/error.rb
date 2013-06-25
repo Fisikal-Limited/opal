@@ -1,10 +1,10 @@
-class Exception < `Error`
+class Exception
   attr_reader :message
 
   def self.new(message = '')
     %x{
       var err = new Error(message);
-      err._klass = #{self};
+      err.constructor = #{self};
       err.name = #{self}._name;
       return err;
     }

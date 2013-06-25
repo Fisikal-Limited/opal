@@ -53,11 +53,16 @@ class NilClass
     'null'
   end
 
-  def to_native
-    `null`
+  def to_n
+    `nil`
   end
 
   def to_s
     ''
   end
+
+  def object_id
+    `#{NilClass}._id || (#{NilClass}._id = Opal.uid())`
+  end
+  alias hash object_id
 end

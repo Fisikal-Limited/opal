@@ -1,4 +1,4 @@
-class Proc < `Function`
+class Proc
   `def._isProc = true`
   `def.is_lambda = true`
 
@@ -34,6 +34,10 @@ class Proc < `Function`
 
   def arity
     `#{self}.length - 1`
+  end
+
+  def to_n
+    self
   end
 end
 

@@ -10,11 +10,11 @@ module Enumerable
           for(var i = 0; i < arguments.length; i ++) {
             args[i] = arguments[i];
           }
-          
+
           if ((value = block.apply(#{self}, args)) === __breaker) {
             return __breaker.$v;
           }
-             
+
           if (value === false || value === nil) {
             result = false;
             __breaker.$v = nil;
@@ -25,7 +25,7 @@ module Enumerable
       }
       else {
         proc = function(obj) {
-          if ((obj === false || obj === nil) && arguments.length < 2) {  
+          if ((obj === false || obj === nil) && arguments.length < 2) {
             result = false;
             __breaker.$v = nil;
 
@@ -41,7 +41,7 @@ module Enumerable
     }
   end
 
-  def any?(&block) 
+  def any?(&block)
     %x{
       var result = false, proc;
 
@@ -52,7 +52,7 @@ module Enumerable
           for(var i = 0; i < arguments.length; i ++) {
             args[i] = arguments[i];
           }
-          
+
           if ((value = block.apply(#{self}, args)) === __breaker) {
             return __breaker.$v;
           }
@@ -70,7 +70,7 @@ module Enumerable
           if ((obj !== false && obj !== nil) || arguments.length >= 2) {
             result      = true;
             __breaker.$v = nil;
-            
+
             return __breaker;
           }
         }
@@ -90,7 +90,7 @@ module Enumerable
       var proc = function() {
         var obj = __slice.call(arguments), value;
 
-        if ((value = block.apply(null, obj)) === __breaker) {
+        if ((value = block.apply(nil, obj)) === __breaker) {
           return __breaker.$v;
         }
 
@@ -111,7 +111,7 @@ module Enumerable
       var proc = function() {
         var obj = __slice.call(arguments), value;
 
-        if ((value = block.apply(null, [result].concat(obj))) === __breaker) {
+        if ((value = block.apply(nil, [result].concat(obj))) === __breaker) {
           result = __breaker.$v;
           __breaker.$v = nil;
 
@@ -441,6 +441,156 @@ module Enumerable
   end
 
   alias map collect
+
+  def max(&block)
+    %x{
+      var proc, result;
+      var arg_error = false;
+      if (block !== nil) {
+        proc = function(obj) {
+          if (result == undefined) {
+            result = obj;
+          }
+          else if ((value = block(obj, result)) === __breaker) {
+            result = __breaker.$v;
+            return __breaker;
+          }
+          else {
+            if (value > 0) {
+              result = obj;
+            }
+            __breaker.$v = nil;
+          }
+        }
+      }
+      else {
+        proc = function(obj) {
+          var modules = obj.$class().$included_modules;
+          if (modules == undefined || modules.length == 0 || modules.indexOf(Opal.Comparable) == -1) {
+            arg_error = true;
+            return __breaker;
+          }
+          if (result == undefined || obj > result) {
+            result = obj;
+          }
+        }
+      }
+
+      #{self}.$each._p = proc;
+      #{self}.$each();
+
+      if (arg_error) {
+        #{raise ArgumentError, "Array#max"};
+      }
+
+      return (result == undefined ? nil : result);
+    }
+  end
+
+  def min(&block)
+    %x{
+      var proc, result;
+      var arg_error = false;
+      if (block !== nil) {
+        proc = function(obj) {
+          if (result == undefined) {
+            result = obj;
+          }
+          else if ((value = block(obj, result)) === __breaker) {
+            result = __breaker.$v;
+            return __breaker;
+          }
+          else {
+            if (value < 0) {
+              result = obj;
+            }
+            __breaker.$v = nil;
+          }
+        }
+      }
+      else {
+        proc = function(obj) {
+          var modules = obj.$class().$included_modules;
+          if (modules == undefined || modules.length == 0 || modules.indexOf(Opal.Comparable) == -1) {
+            arg_error = true;
+            return __breaker;
+          }
+          if (result == undefined || obj < result) {
+            result = obj;
+          }
+        }
+      }
+
+      #{self}.$each._p = proc;
+      #{self}.$each();
+
+      if (arg_error) {
+        #{raise ArgumentError, "Array#min"};
+      }
+
+      return (result == undefined ? nil : result);
+    }
+  end
+
+  def none?(&block)
+    %x{
+      var result = true, proc;
+
+      if (block !== nil) {
+        proc = function(obj) {
+          var value;
+          var args = [];
+          for(var i = 0; i < arguments.length; i ++) {
+            args[i] = arguments[i];
+          }
+
+          if ((value = block.apply(#{self}, args)) === __breaker) {
+            return __breaker.$v;
+          }
+
+          if (value !== false && value !== nil) {
+            result = false;
+            __breaker.$v = nil;
+
+            return __breaker;
+          }
+        }
+      }
+      else {
+        proc = function(obj) {
+          if (arguments.length == 1 && (obj !== false && obj !== nil)) {
+            result = false;
+            __breaker.$v = nil;
+
+            return __breaker;
+          }
+          else {
+            for (var i = 0, length = arguments.length; i < length; i++) {
+              if (arguments[i] !== false && arguments[i] !== nil) {
+                result = false;
+                __breaker.$v = nil;
+
+                return __breaker;
+              }
+            }
+          }
+        };
+      }
+
+      #{self}.$each._p = proc;
+      #{self}.$each();
+
+      return result;
+    }
+  end
+
+  def sort_by &block
+    map { |*f|
+      # FIXME: this should probably belongs to somewhere more
+      f = `#{f}.length === 1 ? #{f}[0] : #{f}`
+      `[#{block.call(f)}, #{f}]`
+    }.sort.map { |f| `#{f}[1]` }
+  end
 
   alias select find_all
 

@@ -1,4 +1,4 @@
-class Numeric < `Number`
+class Numeric
   include Comparable
 
   `def._isNumber = true`
@@ -76,7 +76,7 @@ class Numeric < `Number`
   end
 
   def ==(other)
-    `#{self} == other`
+    `!!(other._isNumber) && #{self} == Number(other)`
   end
 
   def <=>(other)
@@ -189,6 +189,10 @@ class Numeric < `Number`
     `#{self}.toString()`
   end
 
+  def to_n
+    self
+  end
+
   def upto(finish, &block)
     return enum_for :upto, finish unless block_given?
 
@@ -205,6 +209,11 @@ class Numeric < `Number`
 
   def zero?
     `#{self} == 0`
+  end
+
+  def size
+    # Just a stub, JS is 32bit for bitwise ops though
+    4
   end
 end
 

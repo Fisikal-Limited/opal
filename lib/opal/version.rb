@@ -1,3 +1,3 @@
 module Opal
-  VERSION = '0.3.42'
+  VERSION = '0.4.1'
 end

@@ -487,6 +487,9 @@ module Opal
           if [:expr_beg, :expr_mid, :expr_class].include? @lex_state
             @lex_state = :expr_beg
             return '::@', scanner.matched
+          elsif space_seen && @lex_state == :expr_arg
+            @lex_state = :expr_beg
+            return '::@', scanner.matched
           end
 
           @lex_state = :expr_dot
@@ -533,7 +536,7 @@ module Opal
           end
 
         elsif scanner.scan(/\^\=/)
-          @lex_state = :exor_beg
+          @lex_state = :expr_beg
           return :OP_ASGN, '^'
         elsif scanner.scan(/\^/)
           if @lex_state == :expr_fname
@@ -665,8 +668,7 @@ module Opal
           return [result, result]
 
         elsif scanner.scan(/\?/)
-          # FIXME: :expr_arg shouldnt really be here
-          if [:expr_end, :expr_endarg, :expr_arg].include?(@lex_state)
+          if [:expr_end, :expr_endarg].include?(@lex_state)
             @lex_state = :expr_beg
             return '?', scanner.matched
           end
@@ -807,7 +809,11 @@ module Opal
 
         elsif scanner.check(/[0-9]/)
           @lex_state = :expr_end
-          if scanner.scan(/[\d_]+\.[\d_]+\b|[\d_]+(\.[\d_]+)?[eE][-+]?[\d_]+\b/)
+          if scanner.scan(/0b?(0|1|_)+/)
+            return [:INTEGER, scanner.matched.to_i(2)]
+          elsif scanner.scan(/0o?([0-7]|_)+/)
+            return [:INTEGER, scanner.matched.to_i(8)]
+          elsif scanner.scan(/[\d_]+\.[\d_]+\b|[\d_]+(\.[\d_]+)?[eE][-+]?[\d_]+\b/)
             return [:FLOAT, scanner.matched.gsub(/_/, '').to_f]
           elsif scanner.scan(/[\d_]+\b/)
             return [:INTEGER, scanner.matched.gsub(/_/, '').to_i]

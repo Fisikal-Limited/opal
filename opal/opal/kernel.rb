@@ -36,7 +36,7 @@ module Kernel
         #{ raise NameError };
       }
 
-      func._klass = #{Method};
+      func.constructor = #{Method};
       return func;
     }
   end
@@ -60,7 +60,10 @@ module Kernel
 
   def Array(object)
     %x{
-      if (object.$to_ary) {
+      if (object === nil) {
+        return [];
+      }
+      else if (object.$to_ary) {
         return #{object.to_ary};
       }
       else if (object.$to_a) {
@@ -72,7 +75,7 @@ module Kernel
   end
 
   def class
-    `#{self}._klass`
+    `#{self}.constructor`
   end
 
   def define_singleton_method(name, &body)
@@ -252,7 +255,7 @@ module Kernel
   end
 
   def instance_of?(klass)
-    `#{self}._klass === klass`
+    `#{self}.constructor === klass`
   end
 
   def instance_variable_defined?(name)
@@ -287,7 +290,7 @@ module Kernel
 
   def is_a?(klass)
     %x{
-      var search = #{self}._klass;
+      var search = #{self}.constructor;
 
       while (search) {
         if (search === klass) {
@@ -375,7 +378,18 @@ module Kernel
   end
 
   def rand(max = undefined)
-    `max == null ? Math.random() : Math.floor(Math.random() * max)`
+    %x{
+      if(!max) {
+        return Math.random();
+      } else {
+        if (max._isRange) {
+          var arr = max.$to_a();
+          return arr[#{rand(`arr.length`)}];  
+        } else {
+          return Math.floor(Math.random() * Math.abs(parseInt(max)));
+        }
+      }
+    }
   end
 
   def respond_to?(name)
@@ -386,13 +400,13 @@ module Kernel
 
   def singleton_class
     %x{
-      if (#{self}._isClass) {
+      if (typeof(#{self}) === 'function') {
         if (#{self}._singleton) {
           return #{self}._singleton;
         }
 
         var meta = new __opal.Class;
-        meta._klass = __opal.Class;
+        meta.constructor = __opal.Class;
         #{self}._singleton = meta;
         meta.prototype = #{self};
         meta._isSingleton = true;
@@ -400,8 +414,8 @@ module Kernel
         return meta;
       }
 
-      if (!#{self}._isObject) {
-        return #{self}._klass;
+      if (typeof(#{self}) === 'function') {
+        return #{self}.constructor;
       }
 
       if (#{self}._singleton) {
@@ -409,16 +423,16 @@ module Kernel
       }
 
       else {
-        var orig_class = #{self}._klass,
+        var orig_class = #{self}.constructor,
             class_id   = "#<Class:#<" + orig_class._name + ":" + orig_class._id + ">>";
 
-        function Singleton() {};
+        var Singleton = function () {};
         var meta = Opal.boot(orig_class, Singleton);
         meta._name = class_id;
 
         meta.prototype = #{self};
         #{self}._singleton = meta;
-        meta._klass = orig_class._klass;
+        meta.constructor = orig_class.constructor;
 
         return meta;
       }
@@ -445,6 +459,17 @@ module Kernel
   end
 
   def to_s
-    `return "#<" + #{self}._klass._name + ":" + #{self}._id + ">";`
+    `return "#<" + #{self}.constructor._name + ":" + #{self}._id + ">";`
+  end
+
+  alias to_str to_s
+
+  def freeze
+    @___frozen___ = true
+    self
+  end
+
+  def frozen?
+    @___frozen___ || false
   end
 end

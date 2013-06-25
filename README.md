@@ -1,6 +1,7 @@
 # Opal
 
 [![Build Status](https://secure.travis-ci.org/opal/opal.png?branch=master)](http://travis-ci.org/opal/opal)
+[![Gem Version](https://badge.fury.io/rb/opal.png)](http://badge.fury.io/rb/opal)
 
 Opal is a ruby to javascript source-to-source compiler. It also has an 
 implementation of the ruby corelib.
@@ -40,9 +41,9 @@ javascript. These are built using `rake`, as above.
 
 ### spec
 
-* **core** contains rubyspecs that apply to opal.
-* **language** applicable specs from rubyspec for testing language semantics
-* **grammar** specs for opal lib (parser, lexer, grammar etc)
+* **rubyspec** contains rubyspecs that apply to opal (core + language)
+* **opal** opal additions/special behaviour in the runtime/corelib
+* **parser** specs for opal lib (parser, lexer, grammar etc)
 
 ## License
 

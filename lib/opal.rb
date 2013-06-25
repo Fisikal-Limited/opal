@@ -35,6 +35,6 @@ module Opal
 
   # Private, don't add to these directly (use .append_path instead).
   def self.paths
-    @paths ||= [Opal.core_dir]
+    @paths ||= [core_dir]
   end
 end

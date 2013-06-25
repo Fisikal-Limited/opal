@@ -1,31 +1,41 @@
-class Regexp < `RegExp`
+class Regexp
+  `def._isRegexp = true`
+
   def self.escape(string)
     `string.replace(/[\\-\\[\\]\\/\\{\\}\\(\\)\\*\\+\\?\\.\\\\\^\\$\\|]/g, '\\\\$&')`
   end
 
-  def self.new(string, options = undefined)
-    `new RegExp(string, options)`
+  def self.new(regexp, options = undefined)
+    `options? new RegExp(regexp, options) : new RegExp(regexp)`
   end
 
   def ==(other)
     `other.constructor == RegExp && #{self}.toString() === other.toString()`
   end
 
-  alias_native :===, :test
+  def ===(str)
+    `#{self}.test(str)`
+  end
 
   def =~(string)
     %x{
-      var result = #{self}.exec(string);
-
-      if (result) {
-        result.$to_s    = match_to_s;
-        result.$inspect = match_inspect;
-        result._klass = #{MatchData};
-
-        #{$~ = `result`};
+      var re = #{self};
+      if (re.global) {
+        // should we clear it afterwards too?
+        re.lastIndex = 0;
       }
       else {
-        #{$~ = nil};
+        // rewrite regular expression to add the global flag to capture pre/post match
+        re = new RegExp(re.source, 'g' + (re.multiline ? 'm' : '') + (re.ignoreCase ? 'i' : ''));
+      }
+
+      var result = re.exec(string);
+
+      if (result) {
+        #{$~ = MatchData.new(`re`, `result`)};
+      }
+      else {
+        #{$~ = $` = $' = nil};
       }
 
       return result ? result.index : nil;
@@ -34,39 +44,39 @@ class Regexp < `RegExp`
 
   alias eql? ==
 
-  alias_native :inspect, :toString
+  def inspect
+    `#{self}.toString()`
+  end
 
-  def match(pattern, pos = undefined)
+  def match(string, pos = undefined)
     %x{
-      var result  = #{self}.exec(pattern);
-
-      if (result) {
-        result.$to_s    = match_to_s;
-        result.$inspect = match_inspect;
-        result._klass = #{MatchData};
-
-        return #{$~ = `result`};
+      var re = #{self};
+      if (re.global) {
+        // should we clear it afterwards too?
+        re.lastIndex = 0;
       }
       else {
-        return #{$~ = nil};
+        re = new RegExp(re.source, 'g' + (#{self}.multiline ? 'm' : '') + (#{self}.ignoreCase ? 'i' : ''));
+      }
+
+      var result = re.exec(string);
+
+      if (result) {
+        return #{$~ = MatchData.new(`re`, `result`)};
+      }
+      else {
+        return #{$~ = $` = $' = nil};
       }
     }
   end
 
-  def to_s
+  def source
     `#{self}.source`
   end
 
-  %x{
-    function match_to_s() {
-      return this[0];
-    }
+  alias to_s source
 
-    function match_inspect() {
-      return "<#MatchData " + this[0].$inspect() + ">";
-    }
-  }
-end
-
-class MatchData
+  def to_n
+    self
+  end
 end

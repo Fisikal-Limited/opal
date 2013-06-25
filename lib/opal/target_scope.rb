@@ -113,12 +113,12 @@ module Opal
     ##
     # Vars to use inside each scope
     def to_vars
-      vars = @locals.map { |l| "#{l} = nil" }
-      vars.push(*@temps)
+      vars = @temps.dup
+      vars.push(*@locals.map { |l| "#{l} = nil" })
       current_self = @parser.current_self
 
       iv = ivars.map do |ivar|
-       "if (#{current_self}#{ivar} == null) #{current_self}#{ivar} = nil;\n"
+        "if (#{current_self}#{ivar} == null) #{current_self}#{ivar} = nil;\n"
       end
 
       indent = @parser.parser_indent
@@ -126,19 +126,26 @@ module Opal
       str = ivars.empty? ? res : "#{res}\n#{indent}#{iv.join indent}"
 
       if class? and !@proto_ivars.empty?
+        #raise "FIXME to_vars"
         pvars = @proto_ivars.map { |i| "#{proto}#{i}"}.join(' = ')
-        "%s\n%s%s = nil;" % [str, indent, pvars]
+        result = "%s\n%s%s = nil;" % [str, indent, pvars]
       else
-        str
+        result = str
       end
+
+      fragment(result)
+    end
+
+    def fragment(code, sexp = nil)
+      @parser.fragment code
     end
 
     # Generates code for this module to donate methods
     def to_donate_methods
       if should_donate? and !@methods.empty?
-        "%s;#{@name}._donate([%s]);" % [@parser.parser_indent, @methods.map(&:inspect).join(', ')]
+        fragment("%s;__opal.donate(#{@name}, [%s]);" % [@parser.parser_indent, @methods.map(&:inspect).join(', ')])
       else
-        ""
+        fragment("")
       end
     end
 
@@ -182,7 +189,7 @@ module Opal
     def new_temp
       return @queue.pop unless @queue.empty?
 
-      tmp = "_#{@unique}"
+      tmp = "$#{@unique}"
       @unique = @unique.succ
       @temps << tmp
       tmp

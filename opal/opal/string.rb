@@ -1,4 +1,4 @@
-class String < `String`
+class String
   include Comparable
 
   `def._isString = true`
@@ -165,6 +165,19 @@ class String < `String`
     }
   end
 
+  def center(width, padstr = ' ')
+    %x{
+      if (width <= #{self}.length) {
+        return #{self};
+      }
+      else {
+        var ljustified = #{self.ljust( ((width + self.size)/2).floor, padstr)};
+        var rjustified = #{self.rjust( ((width + self.size)/2).ceil, padstr)};
+        return ljustified + rjustified.slice(#{self}.length);
+      }
+    }
+  end
+
   def chars
     %x{
       for (var i = 0, length = #{self}.length; i < length; i++) {
@@ -175,13 +188,30 @@ class String < `String`
 
   def chomp(separator = $/)
     %x{
-      if (separator === "\\n") {
-        return #{self}.replace(/(\\n|\\r|\\r\\n)$/, '');
+      var strlen = #{self}.length;
+      var seplen = separator.length;
+      if (strlen > 0) {
+        if (separator === "\\n") {
+          var last = #{self}.charAt(strlen - 1);
+          if (last === "\\n" || last == "\\r") {
+            var result = #{self}.substr(0, strlen - 1);
+            if (strlen > 1 && #{self}.charAt(strlen - 2) === "\\r") {
+              result = #{self}.substr(0, strlen - 2);
+            }
+            return result;
+          }
+        }
+        else if (separator === "") {
+          return #{self}.replace(/(?:\\n|\\r\\n)+$/, '');
+        }
+        else if (strlen >= seplen) {
+          var tail = #{self}.substr(-1 * seplen);
+          if (tail === separator) {
+            return #{self}.substr(0, strlen - seplen);
+          }
+        }
       }
-      else if (separator === "") {
-        return #{self}.replace(/(\\n|\\r\\n)+$/, '');
-      }
-      return #{self}.replace(new RegExp(separator + '$'), '');
+      return #{self}
     }
   end
 
@@ -193,39 +223,51 @@ class String < `String`
     `#{self}.charAt(0)`
   end
 
+  def clone
+    `#{self}.slice()`
+  end
+
   def count(str)
     `(#{self}.length - #{self}.replace(new RegExp(str,"g"), '').length) / str.length`
   end
 
-  def dasherize
-    `#{self}.replace(/[-\\s]+/g, '-')
-                .replace(/([A-Z\\d]+)([A-Z][a-z])/g, '$1-$2')
-                .replace(/([a-z\\d])([A-Z])/g, '$1-$2')
-                .toLowerCase()`
+  alias dup clone
+
+  def downcase
+    `#{self}.toLowerCase()`
   end
-
-  def demodulize
-    %x{
-      var idx = #{self}.lastIndexOf('::');
-
-      if (idx > -1) {
-        return #{self}.substr(idx + 2);
-      }
-      
-      return #{self};
-    }
-  end
-
-  alias_native :downcase, :toLowerCase
 
   alias each_char chars
 
   def each_line (separator = $/)
+    return self.split(separator).each unless block_given?
+
     %x{
-      var splitted = #{self}.split(separator);
+      var chomped = #{self.chomp};
+      var trailing_separator = #{self}.length != chomped.length
+      var splitted = chomped.split(separator);
+
+      if (!#{block_given?}) {
+        result = []
+        for (var i = 0, length = splitted.length; i < length; i++) {
+          if (i < length - 1 || trailing_separator) {
+            result.push(splitted[i] + separator);
+          }
+          else {
+            result.push(splitted[i]);
+          }
+        }
+
+        return #{`result`.each};
+      }
 
       for (var i = 0, length = splitted.length; i < length; i++) {
-        #{yield `splitted[i] + separator`}
+        if (i < length - 1 || trailing_separator) {
+          #{yield `splitted[i] + separator`}
+        }
+        else {
+          #{yield `splitted[i]`}
+        }
       }
     }
   end
@@ -239,7 +281,7 @@ class String < `String`
       for (var i = 0, length = suffixes.length; i < length; i++) {
         var suffix = suffixes[i];
 
-        if (#{self}.lastIndexOf(suffix) === #{self}.length - suffix.length) {
+        if (#{self}.length >= suffix.length && #{self}.substr(0 - suffix.length) === suffix) {
           return true;
         }
       }
@@ -254,7 +296,9 @@ class String < `String`
     `#{self}.toString() === val.toString()`
   end
 
-  alias_native :getbyte, :charCodeAt
+  def getbyte(idx)
+    `#{self}.charCodeAt(idx)`
+  end
 
   def gsub(pattern, replace = undefined, &block)
     if pattern.is_a?(String)
@@ -271,7 +315,9 @@ class String < `String`
     }
   end
 
-  alias_native :hash, :toString
+  def hash
+    `#{self}.toString()`
+  end
 
   def hex
     to_i 16
@@ -281,36 +327,37 @@ class String < `String`
     `#{self}.indexOf(other) !== -1`
   end
 
-  def index(what, offset)
+  def index(what, offset = nil)
     %x{
-      if (!what._isString && !what._isRegexp) {
-        throw new Error('type mismatch');
+      if ( !(what != null && (what._isString || what._isRegexp)) ) {
+        #{raise TypeError, 'type mismatch'};
       }
 
       var result = -1;
 
       if (offset != null) {
         if (offset < 0) {
-          offset = #{self}.length - offset;
+          offset = offset + #{self}.length;
+        }
+
+        if (offset > #{self}.length) {
+          return nil;
         }
 
         if (#{what.is_a?(Regexp)}) {
           result = #{what =~ `#{self}.substr(offset)` || -1}
-        }
-        else {
-          result = #{self}.substr(offset).indexOf(substr);
+        } else {
+          result = #{self}.substr(offset).indexOf(#{what});
         }
 
         if (result !== -1) {
           result += offset;
         }
-      }
-      else {
+      } else {
         if (#{what.is_a?(Regexp)}) {
           result = #{(what =~ self) || -1}
-        }
-        else {
-          result = #{self}.indexOf(substr);
+        } else {
+          result = #{self}.indexOf(#{what});
         }
       }
 
@@ -352,8 +399,19 @@ class String < `String`
     `#{self}.length`
   end
 
-  def ljust(integer, padstr = ' ')
-    raise NotImplementedError
+  def ljust(width, padstr = ' ')
+    %x{
+      if (width <= #{self}.length) {
+          return #{self};
+      }
+      else {
+        var n_chars = Math.floor(width - #{self}.length)
+        var n_patterns = Math.floor(n_chars/padstr.length);
+        var result = Array(n_patterns + 1).join(padstr);
+        var remaining = n_chars - result.length;
+        return result + padstr.slice(0, remaining) + #{self};
+      }
+    }
   end
 
   def lstrip
@@ -394,8 +452,93 @@ class String < `String`
     `#{self}.split('').reverse().join('')`
   end
 
+  # TODO handle case where search is regexp
+  def rindex(search, offset = undefined)
+    %x{
+      var search_type = (search == null ? Opal.NilClass : search.$class());
+      if (search_type != String && search_type != RegExp) {
+        var msg = "type mismatch: " + search_type + " given";
+        #{raise TypeError.new(`msg`)};
+      }
+
+      if (#{self}.length == 0) {
+        return search.length == 0 ? 0 : nil;
+      }
+
+      var result = -1;
+      if (offset != null) {
+        if (offset < 0) {
+          offset = #{self}.length + offset;
+        }
+
+        if (search_type == String) {
+          result = #{self}.lastIndexOf(search, offset);
+        }
+        else {
+          result = #{self}.substr(0, offset + 1).$reverse().search(search);
+          if (result !== -1) {
+            result = offset - result;
+          }
+        }
+      }
+      else {
+        if (search_type == String) {
+          result = #{self}.lastIndexOf(search);
+        }
+        else {
+          result = #{self}.$reverse().search(search);
+          if (result !== -1) {
+            result = #{self}.length - 1 - result;
+          }
+        }
+      }
+
+      return result === -1 ? nil : result;
+    }
+  end
+
+  def rjust(width, padstr = ' ')
+    %x{
+      if (width <= #{self}.length) {
+          return #{self};
+      }
+      else {
+          var ljustified = #{ self.ljust(width, padstr) };
+          return #{self} + ljustified.slice(0, -#{self}.length);
+      }
+    }
+  end
+
   def rstrip
     `#{self}.replace(/\\s*$/, '')`
+  end
+
+  def scan(pattern, &block)
+    %x{
+      if (pattern.global) {
+        // should we clear it afterwards too?
+        pattern.lastIndex = 0;
+      }
+      else {
+        // rewrite regular expression to add the global flag to capture pre/post match
+        pattern = new RegExp(pattern.source, 'g' + (pattern.multiline ? 'm' : '') + (pattern.ignoreCase ? 'i' : ''));
+      }
+
+      var result = [];
+      var match;
+
+      while ((match = pattern.exec(#{self})) != null) {
+        var match_data = #{MatchData.new `pattern`, `match`};
+        if (block === nil) {
+          match.length == 1 ? result.push(match[0]) : result.push(match.slice(1));
+        }
+        else {
+          match.length == 1 ? block(match[0]) : block.apply(#{self}, match.slice(1));
+        }
+      }
+
+      return (block !== nil ? #{self} : result);
+    }
   end
 
   alias size length
@@ -425,12 +568,35 @@ class String < `String`
   def sub(pattern, replace = undefined, &block)
     %x{
       if (typeof(replace) === 'string') {
+        // convert Ruby back reference to JavaScript back reference
+        replace = replace.replace(/\\\\([1-9])/g, '$$$1')
         return #{self}.replace(pattern, replace);
       }
       if (block !== nil) {
-        return #{self}.replace(pattern, function(str, a) {
-          #{ $1 = `a` };
-          return block(str);
+        return #{self}.replace(pattern, function() {
+          // FIXME: this should be a formal MatchData object with all the goodies
+          var match_data = []
+          for (var i = 0, len = arguments.length; i < len; i++) {
+            var arg = arguments[i];
+            if (arg == undefined) {
+              match_data.push(nil);
+            }
+            else {
+              match_data.push(arg);
+            }
+          }
+
+          var str = match_data.pop();
+          var offset = match_data.pop();
+          var match_len = match_data.length;
+
+          // $1, $2, $3 not being parsed correctly in Ruby code
+          //for (var i = 1; i < match_len; i++) {
+          //  __gvars[String(i)] = match_data[i];
+          //}
+          #{$& = `match_data[0]`};
+          #{$~ = `match_data`};
+          return block(match_data[0]);
         });
       }
       else if (replace !== undefined) {
@@ -452,7 +618,9 @@ class String < `String`
         }
       }
       else {
-        return #{self}.replace(pattern, replace.toString());
+        // convert Ruby back reference to JavaScript back reference
+        replace = replace.toString().replace(/\\\\([1-9])/g, '$$$1')
+        return #{self}.replace(pattern, replace);
       }
     }
   end
@@ -477,7 +645,7 @@ class String < `String`
         return $1 ? $0.toUpperCase() : $0.toLowerCase();
       });
 
-      if (#{self}._klass === String) {
+      if (#{self}.constructor === String) {
         return str;
       }
 
@@ -528,20 +696,396 @@ class String < `String`
     }
   end
 
-  alias_native :to_s, :toString
+  def to_s
+    `#{self}.toString()`
+  end
 
   alias to_str to_s
 
   alias to_sym intern
-  
-  def underscore
-    `#{self}.replace(/[-\\s]+/g, '_')
-            .replace(/([A-Z\\d]+)([A-Z][a-z])/g, '$1_$2')
-            .replace(/([a-z\\d])([A-Z])/g, '$1_$2')
-            .toLowerCase()`
+
+  def tr(from, to)
+    %x{
+      if (from.length == 0 || from === to) {
+        return #{self};
+      }
+
+      var subs = {};
+      var from_chars = from.split('');
+      var from_length = from_chars.length;
+      var to_chars = to.split('');
+      var to_length = to_chars.length;
+
+      var inverse = false;
+      var global_sub = null;
+      if (from_chars[0] === '^') {
+        inverse = true;
+        from_chars.shift();
+        global_sub = to_chars[to_length - 1]
+        from_length -= 1;
+      }
+
+      var from_chars_expanded = [];
+      var last_from = null;
+      var in_range = false;
+      for (var i = 0; i < from_length; i++) {
+        var char = from_chars[i];
+        if (last_from == null) {
+          last_from = char;
+          from_chars_expanded.push(char);
+        }
+        else if (char === '-') {
+          if (last_from === '-') {
+            from_chars_expanded.push('-');
+            from_chars_expanded.push('-');
+          }
+          else if (i == from_length - 1) {
+            from_chars_expanded.push('-');
+          }
+          else {
+            in_range = true;
+          }
+        }
+        else if (in_range) {
+          var start = last_from.charCodeAt(0) + 1;
+          var end = char.charCodeAt(0);
+          for (var c = start; c < end; c++) {
+            from_chars_expanded.push(String.fromCharCode(c));
+          }
+          from_chars_expanded.push(char);
+          in_range = null;
+          last_from = null;
+        }
+        else {
+          from_chars_expanded.push(char);
+        }
+      }
+
+      from_chars = from_chars_expanded;
+      from_length = from_chars.length;
+
+      if (inverse) {
+        for (var i = 0; i < from_length; i++) {
+          subs[from_chars[i]] = true;
+        }
+      }
+      else {
+        if (to_length > 0) {
+          var to_chars_expanded = [];
+          var last_to = null;
+          var in_range = false;
+          for (var i = 0; i < to_length; i++) {
+            var char = to_chars[i];
+            if (last_from == null) {
+              last_from = char;
+              to_chars_expanded.push(char);
+            }
+            else if (char === '-') {
+              if (last_to === '-') {
+                to_chars_expanded.push('-');
+                to_chars_expanded.push('-');
+              }
+              else if (i == to_length - 1) {
+                to_chars_expanded.push('-');
+              }
+              else {
+                in_range = true;
+              }
+            }
+            else if (in_range) {
+              var start = last_from.charCodeAt(0) + 1;
+              var end = char.charCodeAt(0);
+              for (var c = start; c < end; c++) {
+                to_chars_expanded.push(String.fromCharCode(c));
+              }
+              to_chars_expanded.push(char);
+              in_range = null;
+              last_from = null;
+            }
+            else {
+              to_chars_expanded.push(char);
+            }
+          }
+
+          to_chars = to_chars_expanded;
+          to_length = to_chars.length;
+        }
+
+        var length_diff = from_length - to_length;
+        if (length_diff > 0) {
+          var pad_char = (to_length > 0 ? to_chars[to_length - 1] : '');
+          for (var i = 0; i < length_diff; i++) {
+            to_chars.push(pad_char);
+          }
+        }
+
+        for (var i = 0; i < from_length; i++) {
+          subs[from_chars[i]] = to_chars[i];
+        }
+      }
+
+      var new_str = ''
+      for (var i = 0, length = #{self}.length; i < length; i++) {
+        var char = #{self}.charAt(i);
+        var sub = subs[char];
+        if (inverse) {
+          new_str += (sub == null ? global_sub : char);
+        }
+        else {
+          new_str += (sub != null ? sub : char);
+        }
+      }
+      return new_str;
+    }
   end
 
-  alias_native :upcase, :toUpperCase
+  def tr_s(from, to)
+    %x{
+      if (from.length == 0) {
+        return #{self};
+      }
+
+      var subs = {};
+      var from_chars = from.split('');
+      var from_length = from_chars.length;
+      var to_chars = to.split('');
+      var to_length = to_chars.length;
+
+      var inverse = false;
+      var global_sub = null;
+      if (from_chars[0] === '^') {
+        inverse = true;
+        from_chars.shift();
+        global_sub = to_chars[to_length - 1]
+        from_length -= 1;
+      }
+
+      var from_chars_expanded = [];
+      var last_from = null;
+      var in_range = false;
+      for (var i = 0; i < from_length; i++) {
+        var char = from_chars[i];
+        if (last_from == null) {
+          last_from = char;
+          from_chars_expanded.push(char);
+        }
+        else if (char === '-') {
+          if (last_from === '-') {
+            from_chars_expanded.push('-');
+            from_chars_expanded.push('-');
+          }
+          else if (i == from_length - 1) {
+            from_chars_expanded.push('-');
+          }
+          else {
+            in_range = true;
+          }
+        }
+        else if (in_range) {
+          var start = last_from.charCodeAt(0) + 1;
+          var end = char.charCodeAt(0);
+          for (var c = start; c < end; c++) {
+            from_chars_expanded.push(String.fromCharCode(c));
+          }
+          from_chars_expanded.push(char);
+          in_range = null;
+          last_from = null;
+        }
+        else {
+          from_chars_expanded.push(char);
+        }
+      }
+
+      from_chars = from_chars_expanded;
+      from_length = from_chars.length;
+
+      if (inverse) {
+        for (var i = 0; i < from_length; i++) {
+          subs[from_chars[i]] = true;
+        }
+      }
+      else {
+        if (to_length > 0) {
+          var to_chars_expanded = [];
+          var last_to = null;
+          var in_range = false;
+          for (var i = 0; i < to_length; i++) {
+            var char = to_chars[i];
+            if (last_from == null) {
+              last_from = char;
+              to_chars_expanded.push(char);
+            }
+            else if (char === '-') {
+              if (last_to === '-') {
+                to_chars_expanded.push('-');
+                to_chars_expanded.push('-');
+              }
+              else if (i == to_length - 1) {
+                to_chars_expanded.push('-');
+              }
+              else {
+                in_range = true;
+              }
+            }
+            else if (in_range) {
+              var start = last_from.charCodeAt(0) + 1;
+              var end = char.charCodeAt(0);
+              for (var c = start; c < end; c++) {
+                to_chars_expanded.push(String.fromCharCode(c));
+              }
+              to_chars_expanded.push(char);
+              in_range = null;
+              last_from = null;
+            }
+            else {
+              to_chars_expanded.push(char);
+            }
+          }
+
+          to_chars = to_chars_expanded;
+          to_length = to_chars.length;
+        }
+
+        var length_diff = from_length - to_length;
+        if (length_diff > 0) {
+          var pad_char = (to_length > 0 ? to_chars[to_length - 1] : '');
+          for (var i = 0; i < length_diff; i++) {
+            to_chars.push(pad_char);
+          }
+        }
+
+        for (var i = 0; i < from_length; i++) {
+          subs[from_chars[i]] = to_chars[i];
+        }
+      }
+      var new_str = ''
+      var last_substitute = null
+      for (var i = 0, length = #{self}.length; i < length; i++) {
+        var char = #{self}.charAt(i);
+        var sub = subs[char]
+        if (inverse) {
+          if (sub == null) {
+            if (last_substitute == null) {
+              new_str += global_sub;
+              last_substitute = true;
+            }
+          }
+          else {
+            new_str += char;
+            last_substitute = null;
+          }
+        }
+        else {
+          if (sub != null) {
+            if (last_substitute == null || last_substitute !== sub) {
+              new_str += sub;
+              last_substitute = sub;
+            }
+          }
+          else {
+            new_str += char;
+            last_substitute = null;
+          }
+        }
+      }
+      return new_str;
+    }
+  end
+
+  def upcase
+    `#{self}.toUpperCase()`
+  end
+
+  def freeze
+    self
+  end
+
+  def frozen?
+    true
+  end
 end
 
 Symbol = String
+
+class MatchData < Array
+  attr_reader :post_match, :pre_match, :regexp, :string
+
+  def self.new(regexp, match_groups)
+    %x{
+      var instance = new Opal.MatchData;
+      for (var i = 0, len = match_groups.length; i < len; i++) {
+        var group = match_groups[i];
+        if (group == undefined) {
+          instance.push(nil);
+        }
+        else {
+          instance.push(group);
+        }
+      }
+      instance._begin = match_groups.index;
+      instance.regexp = regexp;
+      instance.string = match_groups.input;
+      instance.pre_match = #{$` = `instance.string.substr(0, regexp.lastIndex - instance[0].length)`};
+      instance.post_match = #{$' = `instance.string.substr(regexp.lastIndex)`};
+      return #{$~ = `instance`};
+    }
+  end
+
+  def begin(pos)
+    %x{
+      if (pos == 0 || pos == 1) {
+        return #{self}._begin;
+      }
+      else {
+        #{raise ArgumentError, 'MatchData#begin only supports 0th element'};
+      }
+    }
+  end
+
+  def captures
+    `#{self}.slice(1)`
+  end
+
+  def inspect
+    %x{
+      var str = "<#MatchData " + #{self}[0].$inspect()
+      for (var i = 1, len = #{self}.length; i < len; i++) {
+        str += " " + i + ":" + #{self}[i].$inspect();
+      }
+      str += ">";
+      return str;
+    }
+  end
+
+  def to_s
+    `#{self}[0]`
+  end
+
+  def to_n
+    self
+  end
+
+  def values_at(*indexes)
+    %x{
+      var vals = [];
+      var match_length = #{self}.length;
+      for (var i = 0, length = indexes.length; i < length; i++) {
+        var pos = indexes[i];
+        if (pos >= 0) {
+          vals.push(#{self}[pos]);
+        }
+        else {
+          pos = match_length + pos;
+          if (pos > 0) {
+            vals.push(#{self}[pos]);
+          }
+          else {
+            vals.push(nil);
+          }
+        }
+      }
+
+      return vals;
+    }
+  end
+end
