@@ -1762,7 +1762,7 @@ module Opal
 
       if returnable
         result.unshift fragment("(function() { ", sexp)
-        result.push fragment("; return nil; }).call(#{current_self})", sexp)
+        result.push fragment("}).call(#{current_self})", sexp)
       end
 
       result
@@ -1940,7 +1940,7 @@ module Opal
 
       if returnable
         code.unshift fragment("(function() { ", exp)
-        code << fragment(" }).call(#{current_self})", exp)
+        code << fragment("}).call(#{current_self})", exp)
       end
 
       code
