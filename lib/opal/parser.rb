@@ -878,10 +878,43 @@ module Opal
         end
 
         result = dispatch
-      else
+      else 
+        # args = process arglist, :expr
+        # dispatch = tmprecv ? "(#{tmprecv} = #{recv_code})#{mid}" : "#{recv_code}#{mid}"
+        # result = splat ? "#{dispatch}.apply(#{tmprecv || recv_code}, #{args})" : "#{dispatch}(#{args})"
+        
+        call_recv = s(:js_tmp, tmprecv || recv_code)
         args = process arglist, :expr
-        dispatch = tmprecv ? "(#{tmprecv} = #{recv_code})#{mid}" : "#{recv_code}#{mid}"
-        result = splat ? "#{dispatch}.apply(#{tmprecv || recv_code}, #{args})" : "#{dispatch}(#{args})"
+        
+        dispatch = [fragment("(#{tmprecv} = ", sexp), recv_code, fragment(")#{mid}", sexp)]
+        
+        if tmpfunc
+          dispatch.unshift fragment("(#{tmpfunc} = ", sexp)
+          dispatch << fragment(", #{tmpfunc}._p = ", sexp)
+          dispatch << block
+          dispatch << fragment(", #{tmpfunc})", sexp)
+        end
+        
+        if splat
+          dispatch << fragment(".apply(", sexp)
+          dispatch << process(call_recv, :expr)
+          dispatch << fragment(", ", sexp)
+          dispatch << args
+          dispatch << fragment(")", sexp)
+        else
+          if tmpfunc
+            dispatch <<  fragment(".call(", sexp)
+            dispatch << process(call_recv, :expr)
+            dispatch << fragment(", ", sexp) if args.any?
+          else
+            dispatch << fragment("(", sexp)
+          end
+          
+          dispatch.push(*args)
+          dispatch << fragment(")", sexp)
+        end
+        
+        result = dispatch
       end
 
       @scope.queue_temp tmpfunc if tmpfunc
@@ -1406,9 +1439,9 @@ module Opal
       @scope.queue_temp redo_var
 
       if stmt_level == :stmt_closure
-        code = "(function() {#{code}}).call(#{current_self})"
-#        code.unshift fragment("(function() {", sexp)
-#        code.push fragment("; return nil; }).call(#{current_self})", sexp)
+#        code = "(function() {#{code}}).call(#{current_self})"
+        code.unshift fragment("(function() {", sexp)
+        code.push fragment("}).call(#{current_self})", sexp)
       end
 
       code
@@ -1446,9 +1479,9 @@ module Opal
       @scope.queue_temp redo_var
 
       if stmt_level == :stmt_closure
-        code = "(function() {#{code}}).call(#{current_self})"
-#        code.unshift fragment("(function() {", exp)
-#        code << fragment("; return nil; }).call(#{current_self})", exp)
+#        code = "(function() {#{code}}).call(#{current_self})"
+        code.unshift fragment("(function() {", exp)
+        code << fragment("}).call(#{current_self})", exp)
       end
 
       code
@@ -1719,8 +1752,8 @@ module Opal
 
       result = [fragment("if (", sexp), check, fragment(") {\n", sexp)]
 
-      code = "(function() {#{code}}).call(#{current_self})" if returnable
-#      indent { result.push(fragment(@indent, sexp), process(truthy, :stmt)) } if truthy
+#      code = "(function() {#{code}}).call(#{current_self})" if returnable
+      indent { result.push(fragment(@indent, sexp), process(truthy, :stmt)) } if truthy
 
       outdent = @indent
       indent { result.push(fragment("\n#{outdent}} else {\n#@indent", sexp), process(falsy, :stmt)) } if falsy
