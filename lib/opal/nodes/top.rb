@@ -12,7 +12,7 @@ module Opal
       def compile
         #push version_comment
 
-        line "(function($opal) {"
+        push "(function($opal) {"
 
         in_scope do
           body_code = stmt(stmts)
@@ -31,7 +31,7 @@ module Opal
           line body_code
         end
 
-        line "})(Opal)\n"
+        push "})(Opal)"
       end
 
       def stmts
