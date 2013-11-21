@@ -1,40 +1,43 @@
-require 'opal/parser'
+require 'opal/compiler'
+require 'opal/builder'
+require 'opal/erb'
 require 'opal/version'
 
 # Opal is a ruby to javascript compiler, with a runtime for running
 # in any javascript environment.
-#
-# Opal::Parser is the core class used for parsing ruby and generating
-# javascript from its syntax tree. Opal::Processor is the main system used
-# for compiling larger programs. Opal::Processor uses sprockets to maintain
-# an environment of load paths, which can be used to require other ruby or
-# javascript sources.
 module Opal
-
-  def self.parse(source, options = {})
-    Parser.new.parse(source, options)
+  def self.gem_dir
+    File.expand_path('..', __FILE__.untaint)
   end
 
-  # Returns the path to the opal corelib. Used by Opal::Processor to load
-  # opal runtime and core lib.
-  #
-  # @return [String]
   def self.core_dir
-    File.expand_path('../../opal', __FILE__)
+    File.expand_path('../../opal', __FILE__.untaint)
+  end
+
+  def self.std_dir
+    File.expand_path('../../stdlib', __FILE__.untaint)
   end
 
   # Add a file path to opals load path. Any gem containing ruby code that Opal
   # has access to should add a load path through this method. Load paths added
   # here should only be paths which contain code targeted at being compiled by
   # Opal.
-  #
-  # @param [String] path file path to add
   def self.append_path(path)
     paths << path
   end
 
+  def self.use_gem(gem_name, include_dependecies = true)
+    spec = Gem::Specification.find_by_name(gem_name)
+
+    spec.runtime_dependencies.each do |dependency|
+      use_gem dependency.name
+    end if include_dependecies
+
+    Opal.append_path File.join(spec.gem_dir, 'lib')
+  end
+
   # Private, don't add to these directly (use .append_path instead).
   def self.paths
-    @paths ||= [core_dir]
+    @paths ||= [core_dir.untaint, std_dir.untaint, gem_dir.untaint]
   end
 end

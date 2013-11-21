@@ -1,16 +1,14 @@
 require 'bundler'
 Bundler.require
-require 'opal-sprockets'
 
-ENV['OPAL_SPEC'] = ["#{Dir.pwd}/spec/"].join(',')
+require 'mspec/opal/rake_task'
 
-run Opal::Server.new { |s|
-  Opal::Processor.arity_check_enabled = true
+::Opal::Processor.arity_check_enabled = true
+::Opal::Processor.dynamic_require_severity = :raise
 
-  s.append_path 'spec'
-  s.append_path File.join(Gem::Specification.find_by_name('mspec').gem_dir, 'lib')
+use Rack::ShowExceptions
+use Rack::ShowStatus
+use MSpec::Opal::Index
+run MSpec::Opal::Environment.new
 
-  s.debug = false
-  s.main = 'ospec/main'
-  s.index_path = 'spec/index.html'
-}
+

@@ -1,56 +1,51 @@
-#= require 'opal/runtime'
-#= require 'opal/class'
-#= require 'opal/basic_object'
-#= require 'opal/kernel'
-#= require 'opal/nil_class'
-#= require 'opal/boolean'
-#= require 'opal/error'
-#= require 'opal/regexp'
-#= require 'opal/comparable'
-#= require 'opal/enumerable'
-#= require 'opal/enumerator'
-#= require 'opal/array'
-#= require 'opal/hash'
-#= require 'opal/string'
-#= require 'opal/numeric'
-#= require 'opal/proc'
-#= require 'opal/range'
-#= require 'opal/time'
-#= require 'opal/json'
-#= require 'opal/native'
+require 'core/runtime'
+require 'core/helpers'
+require 'core/module'
+require 'core/class'
+require 'core/basic_object'
+require 'core/kernel'
+require 'core/nil_class'
+require 'core/boolean'
+require 'core/error'
+require 'core/regexp'
+require 'core/comparable'
+require 'core/enumerable'
+require 'core/enumerator'
+require 'core/array'
+require 'core/hash'
+require 'core/string'
+require 'core/match_data'
+require 'core/encoding'
+require 'core/numeric'
+require 'core/proc'
+require 'core/method'
+require 'core/range'
+require 'core/time'
+require 'core/struct'
+require 'core/io'
+require 'core/main'
 
 # regexp matches
 $& = $~ = $` = $' = nil
 
 # stub library path
-$:            = []
+$: = []
+$" = []
 
 # split lines
-$/            = "\n"
+$/ = "\n"
+$, = " "
 
-# native global
-$$ = $global = `Opal.global`
+ARGV = []
+ARGF = Object.new
+ENV  = {}
 
-ARGV          = []
-ARGF          = Object.new
-ENV           = {}
-TRUE          = true
-FALSE         = false
-NIL           = nil
+$VERBOSE = false
+$DEBUG   = false
+$SAFE    = 0
 
-STDERR        = $stderr = Object.new
-STDIN         = $stdin  = Object.new
-STDOUT        = $stdout = Object.new
-
-RUBY_PLATFORM = 'opal'
-RUBY_ENGINE   = 'opal'
-RUBY_VERSION  = '1.9.3'
-RUBY_RELEASE_DATE = '2013-05-02'
-
-def self.to_s
-  'main'
-end
-
-def self.include(mod)
-  Object.include mod
-end
+RUBY_PLATFORM       = 'opal'
+RUBY_ENGINE         = 'opal'
+RUBY_VERSION        = '2.0.0'
+RUBY_ENGINE_VERSION = '0.5.4'
+RUBY_RELEASE_DATE   = '2013-11-20'
