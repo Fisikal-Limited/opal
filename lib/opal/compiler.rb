@@ -27,7 +27,7 @@ module Opal
     compiler_option :file, '(file)'
 
     # adds method stubs for all used methods in file
-    compiler_option :method_missing, true, :method_missing?
+    compiler_option :method_missing, false, :method_missing?
 
     # adds an arity check to every method definition
     compiler_option :arity_check, false, :arity_check?

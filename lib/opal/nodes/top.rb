@@ -10,7 +10,7 @@ module Opal
       children :body
 
       def compile
-        push version_comment
+        #push version_comment
 
         line "(function($opal) {"
 
@@ -31,7 +31,7 @@ module Opal
           line body_code
         end
 
-        line "})(Opal);\n"
+        line "})(Opal)\n"
       end
 
       def stmts
